@@ -1,87 +1,91 @@
 # Blockchain Based Ecommerce Application
 
-A React and Django ecommerce application that uses an ERC-721 contract to record product ownership and warranty activity. Users can browse and purchase products, while blockchain transactions support ownership transfers and warranty features.
+A full-stack ecommerce store with a React storefront, Django REST API, cart and order management, role-based seller tools, MetaMask wallet support, and Solidity NFT records for ownership and warranty activity.
 
 ## Project structure
 
 ```text
-Backend/blockchain/       Django API, migrations, and settings
+Backend/blockchain/       Django project, API, SQLite configuration, and media uploads
+Frontend/                 React storefront, wallet integration, and contract ABI
 Blockchain-Contract/      Solidity contract source
-Frontend/                 React application and contract ABI
 AUTH_SETUP.md             Authentication and role-based access setup
 ```
 
 ## Prerequisites
 
-- Node.js and npm
-- Python 3.8 recommended for this project's pinned Django 2.2 dependencies
-- Ganache for local blockchain development, or access to a network supported by MetaMask
-- MetaMask browser extension for wallet transactions
-- Remix IDE or another Solidity development environment for deploying the contract
+- Node.js 20.19+ or 22.12+ and npm
+- Python 3.12+ (Python 3.14 is supported)
+- MetaMask
+- A Polygon Amoy RPC provider URL and API key for contract calls
+- Remix IDE or another Solidity development environment to deploy the contract
+
+The app is configured for Polygon Amoy (`chain ID 80002`). The old Mumbai test network is retired. MetaMask can still be used with a local Ganache network for local contract development, but the backend NFT mint flow expects an Amoy deployment and RPC endpoint.
 
 ## Backend setup
 
-From the repository root, create and activate a virtual environment, then install the backend dependencies:
-
-```bash
-cd Backend/blockchain
-python -m venv .venv
-```
-
-Activate it in PowerShell:
+From the repository root, create and activate a virtual environment:
 
 ```powershell
-.\.venv\Scripts\Activate.ps1
+cd Backend/blockchain
+py -3.14 -m venv venv
+.\venv\Scripts\Activate.ps1
 ```
 
-Or on macOS/Linux:
+On macOS/Linux, use `python3 -m venv venv` and `source venv/bin/activate` instead. Install packages and initialize the local database:
 
-```bash
-source .venv/bin/activate
-```
-
-Install dependencies, prepare a fresh local database, and create an administrator account:
-
-```bash
-pip install -r requirements.txt
+```shell
+python -m pip install --upgrade pip
+python -m pip install -r requirements.txt
+Copy-Item .env.example .env   # PowerShell; copy .env.example .env on macOS/Linux
 python manage.py migrate
 python manage.py createsuperuser
 python manage.py runserver
 ```
 
-The API is available at `http://localhost:8000`. The SQLite database and uploaded product images are local data and are not committed. For local development, Django has safe development defaults. To customize settings, copy `.env.example` to `.env` and set `DJANGO_SECRET_KEY`, `DJANGO_DEBUG`, and `DJANGO_ALLOWED_HOSTS` in the process environment before starting Django. The settings module reads environment variables directly; it does not load `.env` files automatically. Use a new secret key and `DJANGO_DEBUG=False` in deployment.
+The API runs at `http://127.0.0.1:8000`. `.env` is read locally and ignored by Git. The development defaults work for browsing and basic API use. To mint warranty NFTs, set `PINATA_JWT`, `POLYGON_RPC_URL`, `CONTRACT_ADDRESS`, and `CONTRACT_OWNER_PRIVATE_KEY` in `Backend/blockchain/.env`. Use newly rotated credentials and a dedicated testnet deployer wallet. Never commit those values. If you do not configure them, the NFT mint endpoint reports that minting is unavailable while normal product/cart/order APIs remain usable.
+
+`db.sqlite3` and uploaded media are local data and are not committed. On a fresh checkout, run migrations and create a superuser; add store inventory through the admin or seller tools.
 
 ## Frontend setup
 
-In another terminal, from the repository root:
+In another terminal:
 
-```bash
+```powershell
 cd Frontend
+Copy-Item .env.example .env   # copy .env.example .env on macOS/Linux
 npm install
-```
-
-Copy `.env.example` to `.env`, set `CONTRACT_ADDRESS` to the deployed contract address, then start the development server:
-
-```bash
 npm start
 ```
 
-The frontend runs at `http://localhost:3000`. Its API defaults to `http://localhost:8000`.
+The Vite development server runs at `http://127.0.0.1:3000`. The API URL defaults to `http://127.0.0.1:8000`. `Frontend/.env` accepts these optional values:
 
-## Deploying the contract
+- `VITE_API_URL` — Django API base URL
+- `VITE_CONTRACT_ADDRESS` — deployed Amoy contract address
+- `VITE_CHAIN_ID=80002` — Polygon Amoy network ID
+- `VITE_EXPLORER_URL=https://amoy.polygonscan.com` — transaction explorer
+- `VITE_POLYGON_RPC_URL` — RPC URL MetaMask can use when adding the Amoy network
 
-1. Open `Blockchain-Contract/FlipkartGrid.sol` in Remix IDE or your Solidity toolchain and compile it with a compatible Solidity 0.8.x compiler and OpenZeppelin Contracts 4.7.0.
-2. Connect MetaMask to the target network (Ganache for local development) and deploy `FlipkartGrid` using the deployer wallet.
-3. Copy the deployed contract address into `Frontend/.env` as `CONTRACT_ADDRESS=0x...`.
+## Deploy the contract
 
-The current frontend contract calls still use a hard-coded address in `Frontend/src/components/NFTDetails.js`; setting `CONTRACT_ADDRESS` alone does not change the address used by those calls. Update that address there to match the deployment when using a different contract. The ABI is in `Frontend/src/Contract.json`.
+1. Open `Blockchain-Contract/FlipkartGrid.sol` in Remix and compile with Solidity 0.8.x and OpenZeppelin Contracts 4.7.0 (as referenced in the source).
+2. Connect MetaMask to Polygon Amoy and deploy `FlipkartGrid` from the wallet you will use as the contract owner.
+3. Copy the deployed address to `Frontend/.env` as `VITE_CONTRACT_ADDRESS` and to `Backend/blockchain/.env` as `CONTRACT_ADDRESS`.
+4. Configure the backend's `POLYGON_RPC_URL`, `PINATA_JWT`, and `CONTRACT_OWNER_PRIVATE_KEY`. Configure `VITE_POLYGON_RPC_URL` for MetaMask network setup.
+5. Restart both development servers after changing environment values.
+
+The contract ABI is in `Frontend/src/Contract.json`. The backend owner key is only used server-side to mint; never put it in frontend environment variables. Polygon Amoy RPC providers may change their endpoint policies, so use a current provider URL and key from your provider rather than a public RPC.
+
+## MetaMask setup and checks
+
+1. Install MetaMask from its official site, create or import a **new test wallet**, and switch to Polygon Amoy (`80002`). The storefront detects account and network changes; wallet actions switch to Amoy and stop if the wallet is on another chain.
+2. Get test POL for gas on Amoy. Transactions cannot be sent from an unfunded wallet.
+3. Deploy `FlipkartGrid.sol` to Amoy and set that deployment's address as `VITE_CONTRACT_ADDRESS` in `Frontend/.env` and `CONTRACT_ADDRESS` in `Backend/blockchain/.env`. The frontend and backend must point to the same Amoy deployment.
+4. Set a working Amoy provider URL in both `VITE_POLYGON_RPC_URL` and `POLYGON_RPC_URL`. These values are provider endpoints and may include API keys; keep `.env` files private.
+5. For backend NFT minting, configure a fresh Pinata JWT and a dedicated testnet owner key in the backend `.env`. The owner key must control the deployed contract, and must never be put in frontend settings.
+6. Restart the frontend and backend after editing environment files. Connect MetaMask from the storefront, approve the site connection, and confirm the header shows the shortened account and `Amoy`.
+
+The checked-in example files contain placeholders, not live deployment credentials. The app cannot submit NFT transactions until you deploy the contract and configure the matching address, RPC provider, and backend credentials. Do not reuse any credentials or wallet key that has previously been exposed in Git history.
 
 ## Authentication
 
-See [AUTH_SETUP.md](AUTH_SETUP.md) for authentication and role-based access details.
-
-## Screenshots
-
-![Ecommerce home page](https://user-images.githubusercontent.com/60435967/187740415-ec77d76a-9011-4841-b36c-8aece8dca27a.png)
-
-![Cart](https://user-images.githubusercontent.com/60435967/187740441-5c1ec5c3-e4fb-4b50-8861-f4c27c60692b.png)
+See [AUTH_SETUP.md](AUTH_SETUP.md) for login, registration, and role-based access details.

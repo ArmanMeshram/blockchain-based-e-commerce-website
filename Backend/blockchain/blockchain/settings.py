@@ -15,6 +15,16 @@ import os
 # Build paths inside the project like this: os.path.join(BASE_DIR, ...)
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
+# Load optional local configuration without requiring python-dotenv at runtime.
+ENV_FILE = os.path.join(BASE_DIR, '.env')
+if os.path.isfile(ENV_FILE):
+    with open(ENV_FILE, 'r') as env_file:
+        for line in env_file:
+            line = line.strip()
+            if line and not line.startswith('#') and '=' in line:
+                key, value = line.split('=', 1)
+                os.environ.setdefault(key.strip(), value.strip().strip('"').strip("'"))
+
 
 # Quick-start development settings - unsuitable for production
 # See https://docs.djangoproject.com/en/2.2/howto/deployment/checklist/
@@ -30,6 +40,11 @@ ALLOWED_HOSTS = [
     for host in os.environ.get('DJANGO_ALLOWED_HOSTS', 'localhost,127.0.0.1').split(',')
     if host.strip()
 ]
+PINATA_JWT = os.environ.get('PINATA_JWT', '')
+CONTRACT_OWNER_PRIVATE_KEY = os.environ.get('CONTRACT_OWNER_PRIVATE_KEY', '')
+POLYGON_RPC_URL = os.environ.get('POLYGON_RPC_URL', '')
+CONTRACT_ADDRESS = os.environ.get('CONTRACT_ADDRESS', '')
+CONTRACT_CHAIN_ID = os.environ.get('CONTRACT_CHAIN_ID', '80002')
 
 
 # Application definition
@@ -90,7 +105,12 @@ DATABASES = {
         'NAME': os.path.join(BASE_DIR, 'db.sqlite3'),
     }
 }
-CORS_ORIGIN_WHITELIST=['http://localhost:3000']
+CORS_ALLOWED_ORIGINS = [
+    'http://localhost:3000',
+    'http://127.0.0.1:3000',
+    'http://localhost:3001',
+    'http://127.0.0.1:3001',
+]
 REST_FRAMEWORK = {
     'DEFAULT_AUTHENTICATION_CLASSES': (
         'rest_framework_simplejwt.authentication.JWTAuthentication',
@@ -131,9 +151,8 @@ TIME_ZONE = 'UTC'
 
 USE_I18N = True
 
-USE_L10N = True
-
 USE_TZ = True
+DEFAULT_AUTO_FIELD = 'django.db.models.AutoField'
 
 
 # Static files (CSS, JavaScript, Images)

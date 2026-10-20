@@ -1,15 +1,16 @@
 import React, { useState } from 'react';
-import { useHistory } from 'react-router-dom';
+import { useNavigate } from 'react-router-dom';
 import axios from 'axios';
 
 const AddProd = () => {
 
-    let history = useHistory();
+    const navigate = useNavigate();
     const [image, setImage] = useState(null)
-    const [name, setName] = useState(null)
-    const [price, setPrice] = useState(null)
-    const [description, setDescription] = useState(null)
-    const [warranty_period, setWarranty_period] = useState(null)
+    const [name, setName] = useState('')
+    const [price, setPrice] = useState('')
+    const [description, setDescription] = useState('')
+    const [warranty_period, setWarranty_period] = useState('')
+    const [preview, setPreview] = useState('')
 
     const addNewProduct = async () => {
         let formField = new FormData()
@@ -24,26 +25,24 @@ const AddProd = () => {
 
         await axios({
           method: 'post',
-          url:'http://localhost:8000/api/product/2/add/',
+          url:`/api/product/${localStorage.getItem('user_id')}/add/`,
           data: formField
         }).then(response=>{
           console.log(response.data);
-          history.push('/')
+          navigate('/')
         })
     }
    
     return (
-        <div className="container">
-            <div className="container">
-              <div className="w-75 mx-auto shadow p-5">
-                <h2 className="text-center mb-4" style={{fontFamily:"arial"}}>Add Product</h2>
+        <main className="page-wrap"><div className="store-container">
+              <div className="admin-form">
+                <p className="eyebrow">STORE MANAGEMENT</p><h2>Add a product</h2>
                 <div className="form-group">
-                <label style={{fontFamily: "arial",fontWeight:500}}>Upload Product Image :</label><br></br>
-                    <input style={{fontFamily:  "arial",backgroundColor:"white",fontSize:14}} type="file" onChange={(e)=>setImage(e.target.files[0])}/>
+                <label>Product image</label>{preview && <img className="admin-image-preview" src={preview} alt="Selected product preview"/>}
+                    <input className="form-control-file" type="file" accept="image/*" onChange={(e)=>{const file=e.target.files[0];setImage(file);setPreview(file ? URL.createObjectURL(file) : '');}}/>
                   </div>
-                  <label style={{fontFamily: "arial",fontWeight:500}}>Product Name :</label><br></br>
                   <div className="form-group">
-                    <input style={{fontFamily: "arial",fontSize:14}}
+                    <label>Product name</label><input
                       type="text"
                       className="form-control form-control-lg"
                       placeholder="Enter Product Name"
@@ -52,9 +51,8 @@ const AddProd = () => {
                       onChange={(e) => setName(e.target.value)}
                     />
                   </div>
-                  <label style={{fontFamily: "arial",fontWeight:500}}>Add Product Price (Without any special character):</label><br></br>
                   <div className="form-group">
-                    <input style={{fontFamily: "arial",fontSize:14}}
+                    <label>Price (INR)</label><input
                       type="text"
                       className="form-control form-control-lg"
                       placeholder="Enter Price (eg 50000)"
@@ -63,9 +61,8 @@ const AddProd = () => {
                       onChange={(e) => setPrice(e.target.value)}
                     />
                   </div>
-                  <label style={{fontFamily: "arial",fontWeight:500}}>Warranty period :</label><br></br>
                   <div className="form-group">
-                    <input style={{fontFamily: "arial",fontSize:14}}
+                    <label>Warranty period (years)</label><input
                       type="text"
                       className="form-control form-control-lg"
                       placeholder="Enter Product Warranty period"
@@ -74,10 +71,8 @@ const AddProd = () => {
                       onChange={(e) => setWarranty_period(e.target.value)}
                     />
                   </div>
-                  <label style={{fontFamily: "arial",fontWeight:500}}>Product Description :</label><br></br>
                   <div className="form-group">
-                    <input style={{fontFamily: "arial",fontSize:14}}
-                      type="text"
+                    <label>Product description</label><textarea
                       className="form-control form-control-lg"
                       placeholder="Enter Product description"
                       name="description"
@@ -85,11 +80,11 @@ const AddProd = () => {
                       onChange={(e) => setDescription(e.target.value)}
                     />
                   </div>
-                  <button style={{fontFamily: "arial",fontWeight:500}} className="btn btn-primary btn-block" onClick={addNewProduct}>Add Product</button>
+                  <button className="btn btn-primary btn-block" onClick={addNewProduct}>Add product</button>
               
                 </div>
               </div>
-          </div>
+        </main>
     );
 };
 

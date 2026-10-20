@@ -4,8 +4,8 @@ The marketplace now uses the existing Django custom account model with JWT acces
 
 ## Start the app
 
-1. In `Backend/blockchain`, install `requirements.txt`, set a long random `DJANGO_SECRET_KEY` in the environment, then run `python manage.py migrate` and `python manage.py runserver`.
-2. In `Frontend`, install dependencies with `npm install`, then run `npm start`. Set `REACT_APP_API_URL` if the API is not at `http://localhost:8000`.
+1. In `Backend/blockchain`, use Python 3.12+, install `requirements.txt`, copy `.env.example` to `.env`, then run `python manage.py migrate` and `python manage.py runserver`.
+2. In `Frontend`, copy `.env.example` to `.env`, install dependencies with `npm install`, then run `npm start`. Set `VITE_API_URL` if the API is not at `http://127.0.0.1:8000`.
 3. Register at `/register` or sign in at `/login`.
 
 ## Authentication API
@@ -16,7 +16,7 @@ The marketplace now uses the existing Django custom account model with JWT acces
 
 Private API endpoints require `Authorization: Bearer <access-token>`. Product catalog listing and detail remain public. Phone numbers are stored as strings to preserve country codes and leading zeroes; migration `user.0002_mobile_no_charfield` applies the schema update.
 
-For production, use HTTPS, a unique secret key from the environment, and configure Django's `ALLOWED_HOSTS` and CORS origins for the deployed domains.
+For production, use HTTPS, a unique secret key from the environment, and configure Django's `DJANGO_ALLOWED_HOSTS` and CORS origins for the deployed domains. Never commit either `.env` file.
 
 ## Roles and permissions
 

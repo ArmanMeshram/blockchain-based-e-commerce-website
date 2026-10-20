@@ -14,7 +14,10 @@ import random,requests,json
 from web3 import Web3, HTTPProvider
 from web3.gas_strategies.rpc import rpc_gas_price_strategy
 from datetime import datetime, timedelta,timezone
-from web3.middleware import geth_poa_middleware
+try:
+    from web3.middleware import ExtraDataToPOAMiddleware as geth_poa_middleware
+except ImportError:  # Web3.py 5.x compatibility for the existing local environment.
+    from web3.middleware import geth_poa_middleware
 from dateutil import relativedelta
 from django.core.mail import send_mail
 from django.conf import settings
@@ -102,6 +105,7 @@ def cart_list(request,id):
         dict1['user_id'] = i['user_id']
         dict1['name'] = product.name
         dict1['price'] = product.price
+        dict1['image'] = product.image.url if product.image else ''
         dict1['quantity'] = i['quantity']
         dict1['total_amount'] = i['total_amount']
         dict1['inCart'] = True
@@ -150,16 +154,15 @@ def remove_item(request,uid,pid):
 @api_view(['POST'])
 @permission_classes([IsCustomer])
 def AddItem(request,uid,pid):
-    request.data['user_id']=uid
-    request.data['product_id']=pid
-    request.data['quantity'] = 1
-    product = Product.objects.get(pk=pid)
-    serializer1 = ProductSerializer(product)
-    request.data['total_amount']=serializer1.data['price']
-    serializer=CartSerializer(data=request.data)
-    if serializer.is_valid():
-        serializer.save()
-        return Response(serializer.data,status=status.HTTP_201_CREATED)
+    try:
+        cart = Cart.objects.get(user_id=uid, product_id=pid)
+        cart.quantity += 1
+        cart.total_amount = cart.quantity * cart.product_id.price
+        cart.save(update_fields=['quantity', 'total_amount'])
+    except Cart.DoesNotExist:
+        product = Product.objects.get(pk=pid)
+        cart = Cart.objects.create(user_id_id=uid, product_id=product, quantity=1, total_amount=product.price)
+    return Response(CartSerializer(cart).data, status=status.HTTP_200_OK)
 
 @api_view(['DELETE'])
 @permission_classes([IsCustomer])
@@ -175,55 +178,25 @@ def clear_cart(request,id):
 @permission_classes([IsCustomer])
 def update_quant_and_total(request,uid,pid):
     try:
-        cart = Cart.objects.filter(user_id=uid)
+        cart = Cart.objects.get(user_id=uid, product_id=pid)
     except Cart.DoesNotExist:
         return Response(status=status.HTTP_404_NOT_FOUND)
-    serializer = CartSerializer(cart,many=True)
-    ls = []
-    for i in serializer.data:
-        if i['product_id']==pid:
-            dict1 = {}
-            cart1 = Cart.objects.get(id=i['id'])
-            product = Product.objects.get(id=i['product_id'])
-            dict1['quantity'] = i['quantity']+1
-            dict1['total_amount'] = i['total_amount']+product.price
-            ls.append(dict1)
-    request.data['user_id'] = uid
-    request.data['product_id'] = pid
-    request.data['quantity'] = ls[0]['quantity']
-    request.data['total_amount'] = ls[0]['total_amount']
-    serializer = CartSerializer(cart1,data=request.data)
-    if serializer.is_valid():
-        serializer.save()
-        return Response(serializer.data)
-    return Response(serializer.errors,status=status.HTTP_400_BAD_REQUEST)
+    cart.quantity += 1
+    cart.total_amount = cart.quantity * cart.product_id.price
+    cart.save(update_fields=['quantity', 'total_amount'])
+    return Response(CartSerializer(cart).data)
 
 @api_view(['PUT'])
 @permission_classes([IsCustomer])
 def dec_quant_and_total(request,uid,pid):
     try:
-        cart = Cart.objects.filter(user_id=uid)
+        cart = Cart.objects.get(user_id=uid, product_id=pid)
     except Cart.DoesNotExist:
         return Response(status=status.HTTP_404_NOT_FOUND)
-    serializer = CartSerializer(cart,many=True)
-    ls = []
-    for i in serializer.data:
-        if i['product_id']==pid:
-            dict1 = {}
-            cart1 = Cart.objects.get(id=i['id'])
-            product = Product.objects.get(id=i['product_id'])
-            dict1['quantity'] = i['quantity']-1
-            dict1['total_amount'] = i['total_amount']-product.price
-            ls.append(dict1)
-    request.data['user_id'] = uid
-    request.data['product_id'] = pid
-    request.data['quantity'] = ls[0]['quantity']
-    request.data['total_amount'] = ls[0]['total_amount']
-    serializer = CartSerializer(cart1,data=request.data)
-    if serializer.is_valid():
-        serializer.save()
-        return Response(serializer.data)
-    return Response(serializer.errors,status=status.HTTP_400_BAD_REQUEST)
+    cart.quantity = max(1, cart.quantity - 1)
+    cart.total_amount = cart.quantity * cart.product_id.price
+    cart.save(update_fields=['quantity', 'total_amount'])
+    return Response(CartSerializer(cart).data)
 
 @api_view(['GET'])
 @permission_classes([IsCustomer])
@@ -308,6 +281,17 @@ def order_details(request,id):
 @api_view(['POST'])
 @permission_classes([IsCustomer])
 def pinata_file_upload(request,uid,id):
+    if not settings.PINATA_JWT or not settings.POLYGON_RPC_URL or not settings.CONTRACT_ADDRESS or not settings.CONTRACT_OWNER_PRIVATE_KEY:
+        return Response({'detail': 'NFT minting is not configured. Set Pinata, Polygon RPC, contract address, and contract owner key in Backend/blockchain/.env.'}, status=status.HTTP_503_SERVICE_UNAVAILABLE)
+    try:
+        w3 = Web3(HTTPProvider(settings.POLYGON_RPC_URL))
+        if not w3.is_connected():
+            raise ValueError('The configured Polygon RPC endpoint is unavailable.')
+        if int(w3.eth.chain_id) != int(settings.CONTRACT_CHAIN_ID):
+            raise ValueError('The configured RPC network does not match CONTRACT_CHAIN_ID.')
+        w3.middleware_onion.inject(geth_poa_middleware, layer=0)
+    except Exception as exc:
+        return Response({'detail': 'Polygon RPC is unavailable or configured for the wrong chain: {}'.format(exc)}, status=status.HTTP_503_SERVICE_UNAVAILABLE)
     oorder = Order_Items.objects.filter(user_id=uid)
     oserializer = Order_ItemsSerializer(oorder,many=True)
     ls = []
@@ -333,19 +317,19 @@ def pinata_file_upload(request,uid,id):
             product = Product.objects.filter(pk=i['product_id'])
             serializer = ProductSerializer(product,many=True)
             img_name = serializer.data[0]['image'].split('/')[-1]
-            file_path = "/Users/Sneha devrani/Desktop/flipkart/backend-server/blockchain/blockchain"+serializer.data[0]['image']
+            file_path = product.image.path
             url = "https://api.pinata.cloud/pinning/pinFileToIPFS"
             payload={}
             files=[
               ('file',(img_name,open(file_path,'rb'),'image/png'))
             ]
             headers = {
-              'Authorization': 'Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VySW5mb3JtYXRpb24iOnsiaWQiOiI1N2M5Mzc3YS1iZTA1LTQzNzQtYjMzOC0wNDk1MzgyNzRlZDEiLCJlbWFpbCI6InJpcHVkYW1hbkBibG9ja2ZpbmNoLmNvbSIsImVtYWlsX3ZlcmlmaWVkIjp0cnVlLCJwaW5fcG9saWN5Ijp7InJlZ2lvbnMiOlt7ImlkIjoiRlJBMSIsImRlc2lyZWRSZXBsaWNhdGlvbkNvdW50IjoxfV0sInZlcnNpb24iOjF9LCJtZmFfZW5hYmxlZCI6ZmFsc2UsInN0YXR1cyI6IkFDVElWRSJ9LCJhdXRoZW50aWNhdGlvblR5cGUiOiJzY29wZWRLZXkiLCJzY29wZWRLZXlLZXkiOiIyYWUzYWI0YzU3ZWE0ZjEyMzU3OSIsInNjb3BlZEtleVNlY3JldCI6IjI4ZjhhMjAyNjllNWMxMmQwMjRlZDZiNGZhODMyZGQxNmVlOTk4MjExNDY4NjQ5ZGZhOTEzMjQxMmFhZGNmNzMiLCJpYXQiOjE2NTg3NzQ3MTF9.hp6hk2UoIYJGccDBBO8p4UG3ZlRrV-4OaIv9Q2srTf8'
+              'Authorization': 'Bearer ' + settings.PINATA_JWT
             }
 
-            response = requests.request("POST", url, headers=headers, data=payload, files=files)
-
-            hashval = response.text.split('"')[3]
+            response = requests.post(url, headers=headers, data=payload, files=files, timeout=60)
+            response.raise_for_status()
+            hashval = response.json()['IpfsHash']
             url = "https://api.pinata.cloud/pinning/pinJSONToIPFS"
             img_url = "https://blockfinch.mypinata.cloud/ipfs/"+ hashval
             Product_name = serializer.data[0]['name']
@@ -364,15 +348,14 @@ def pinata_file_upload(request,uid,id):
               ]
             })
             headers = {
-              'Authorization': 'Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VySW5mb3JtYXRpb24iOnsiaWQiOiI1N2M5Mzc3YS1iZTA1LTQzNzQtYjMzOC0wNDk1MzgyNzRlZDEiLCJlbWFpbCI6InJpcHVkYW1hbkBibG9ja2ZpbmNoLmNvbSIsImVtYWlsX3ZlcmlmaWVkIjp0cnVlLCJwaW5fcG9saWN5Ijp7InJlZ2lvbnMiOlt7ImlkIjoiRlJBMSIsImRlc2lyZWRSZXBsaWNhdGlvbkNvdW50IjoxfV0sInZlcnNpb24iOjF9LCJtZmFfZW5hYmxlZCI6ZmFsc2UsInN0YXR1cyI6IkFDVElWRSJ9LCJhdXRoZW50aWNhdGlvblR5cGUiOiJzY29wZWRLZXkiLCJzY29wZWRLZXlLZXkiOiIyYWUzYWI0YzU3ZWE0ZjEyMzU3OSIsInNjb3BlZEtleVNlY3JldCI6IjI4ZjhhMjAyNjllNWMxMmQwMjRlZDZiNGZhODMyZGQxNmVlOTk4MjExNDY4NjQ5ZGZhOTEzMjQxMmFhZGNmNzMiLCJpYXQiOjE2NTg3NzQ3MTF9.hp6hk2UoIYJGccDBBO8p4UG3ZlRrV-4OaIv9Q2srTf8',
+              'Authorization': 'Bearer ' + settings.PINATA_JWT,
               'Content-Type': 'application/json'
             }
 
-            response = requests.request("POST", url, headers=headers, data=payload)
-            hashval2 = response.text.split('"')[3]
+            response = requests.post(url, headers=headers, data=payload, timeout=60)
+            response.raise_for_status()
+            hashval2 = response.json()['IpfsHash']
             json_url = "https://blockfinch.mypinata.cloud/ipfs/"+ hashval2
-            w3 = Web3(HTTPProvider('https://rpc-mumbai.maticvigil.com'))
-            w3.middleware_onion.inject(geth_poa_middleware, layer=0)
             abi = '''[
     {
         "inputs": [],
@@ -890,28 +873,32 @@ def pinata_file_upload(request,uid,id):
 ]'''
         
             greeter = w3.eth.contract(
-                address= "0x74EE8f104FCABE391C8d9d07A14b7bc1A650bf54",
+                address=Web3.to_checksum_address(settings.CONTRACT_ADDRESS),
                 #"0xb681e8FC1c9E6DBefcF9504a43b634D306c10B7C",
                 abi=abi)
             account_from = {
-            "private_key": "fc9bd64659c5be2986292949638b165dc30d39e5daa8d98fc1c7b240efaab993",
-            #"ee5a323bdec44d17874f746c86ebcba96d6026a15bf230d6f22bc2c0dd0cd061",
-            "address": '0xE9A375C05Dc2Cfc42d6a6254E3cecC2afdc56148',
-            # "0xbf6f03450452271073877Bb4A36A5c4ED6244957",
+                'private_key': settings.CONTRACT_OWNER_PRIVATE_KEY,
             }
+            account_factory = w3.eth.account
+            account = account_factory.from_key(account_from['private_key']) if hasattr(account_factory, 'from_key') else account_factory.privateKeyToAccount(account_from['private_key'])
+            account_from['address'] = account.address
             address_to=id
             # address_to = request.POST.get("to_add")
             print(address_to)
             token_id = random.randint(100000000000000,999999999999999)
            
-            reset_tx = greeter.functions.safeMint(Web3.toChecksumAddress(address_to),token_id,time,json_url).buildTransaction(
+            checksum_address = Web3.to_checksum_address(address_to) if hasattr(Web3, 'to_checksum_address') else Web3.toChecksumAddress(address_to)
+            mint_function = greeter.functions.safeMint(checksum_address,token_id,time,json_url)
+            tx_builder = mint_function.build_transaction if hasattr(mint_function, 'build_transaction') else mint_function.buildTransaction
+            reset_tx = tx_builder(
             {
                 'from': account_from['address'],
                 'nonce': w3.eth.get_transaction_count(account_from['address']),
             }
             )
             tx_create = w3.eth.account.sign_transaction(reset_tx, account_from['private_key'])
-            tx_hash = w3.eth.send_raw_transaction(tx_create.rawTransaction)
+            signed_raw_transaction = tx_create.raw_transaction if hasattr(tx_create, 'raw_transaction') else tx_create.rawTransaction
+            tx_hash = w3.eth.send_raw_transaction(signed_raw_transaction)
             tx_receipt = w3.eth.wait_for_transaction_receipt(tx_hash)
             
             request.data['product_id'] = i['product_id']
@@ -944,8 +931,7 @@ def pinata_file_upload(request,uid,id):
     recipient_list = [serializer.data['email'],]
     message = re.sub(r"[\([{})\]]", "", message)
     message = '\n'.join(message.split(','))
-    msg2 = '''Your transaction is successful. Below are the respective token ids and hash values of the purchased products. You can cross verify from polygon test website.
-Here is the link of the test website https://mumbai.polygonscan.com/ .'''
+    msg2 = '''Your transaction is successful. Below are the respective token ids and hash values of the purchased products. You can verify these transactions on Polygon Amoy at https://amoy.polygonscan.com/.'''
     final_msg = msg2+'\n\n'+message+'\n'+'Regards'+'\n'+'From FlipKart-Grid Team'
     send_mail( subject, final_msg, email_from, recipient_list )
     return Response(try1)

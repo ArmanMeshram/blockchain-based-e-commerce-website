@@ -1,9 +1,12 @@
 import axios from 'axios';
 import React, {useState, useEffect} from 'react';
-import { useHistory} from 'react-router-dom';
+import { useLocation, useNavigate } from 'react-router-dom';
+import { mediaUrl } from '../api';
 
 const UpdateProd = (props) => {
-    let history = useHistory();
+    const location = useLocation();
+    const navigate = useNavigate();
+    const routeState = location.state || {};
 
     const [image, setImage] = useState(null)
     const [name, setName] = useState(null)
@@ -12,7 +15,8 @@ const UpdateProd = (props) => {
     const [warranty_period, setwarranty_period] = useState(null)
 
    let loadProducts = async () => {
-    const result = await axios.get(`http://127.0.0.1:8000/api/product/${props.location.state.id}/`);
+    if (!routeState.id) return;
+    const result = await axios.get(`/api/product/${routeState.id}/`);
     
     console.log(result.data.name);
     setImage(result.data.image);
@@ -36,35 +40,31 @@ const UpdateProd = (props) => {
 
         await axios({
             method: 'PUT',
-            url: `http://localhost:8000/api/product/${props.location.state.r_id}/${props.location.state.id}/update/`,
+            url: `/api/product/${routeState.r_id || localStorage.getItem('user_id')}/${routeState.id}/update/`,
             data: formField
         }).then(response => {
             console.log(response.data);
-            history.push("/");
+            navigate('/');
         })
 
     } 
     
-    useEffect(() => {
-      loadProducts();
-    }, [])
+    useEffect(() => { loadProducts(); }, [routeState.id]);
 
     return (
-       
-        <div className="container">
-          <div className="w-75 mx-auto shadow p-5">
-            <h2 className="text-center mb-4" style={{fontFamily: "arial"}}>Update Product</h2>
+        <main className="page-wrap"><div className="store-container"><div className="admin-form">
+            <p className="eyebrow">STORE MANAGEMENT</p><h2>Update product</h2>
     
             
               <div className="form-group">
-              <label style={{fontFamily: "arial",fontWeight:500}}>Upload Product Image :</label><br></br>
-                <img src={'http://127.0.0.1:8000' + image} height="100" width="200" alt="" srcSet="" />
+              <label>Product image</label><br></br>
+                <img className="admin-image-preview" src={image instanceof File ? URL.createObjectURL(image) : mediaUrl(image)} alt="Product preview" />
                   
                   <input style={{fontFamily: "arial"}} type="file" className="form-control" defaultValue={image} onChange={(e)=>setImage(e.target.files[0])}/>
               </div>
 
               <div className="form-group">
-              <label style={{fontFamily: "arial",fontWeight:500}}>Chnage Product Name:</label><br></br>
+              <label>Product name</label><br></br>
                 <input style={{fontFamily: "arial"}}
                   type="text"
                   className="form-control form-control-lg"
@@ -77,7 +77,7 @@ const UpdateProd = (props) => {
               </div>
             
               <div className="form-group">
-              <label style={{fontFamily: "arial",fontWeight:500}}>Change Description :</label><br></br>
+              <label>Description</label><br></br>
                 <input style={{fontFamily: "arial"}}
                   type="description"
                   className="form-control form-control-lg"
@@ -89,7 +89,7 @@ const UpdateProd = (props) => {
                 />
               </div>
               <div className="form-group">
-              <label style={{fontFamily: "arial",fontWeight:500}}>Change product Warranty :</label><br></br>
+              <label>Warranty period (years)</label><br></br>
                 <input style={{fontFamily: "arial"}}
                   type="text"
                   className="form-control form-control-lg"
@@ -101,7 +101,7 @@ const UpdateProd = (props) => {
                 />
               </div>
               <div className="form-group">
-              <label style={{fontFamily: "arial",fontWeight:500}}>Change Product Price :</label><br></br>
+              <label>Price (INR)</label><br></br>
                 <input style={{fontFamily: "arial"}}
                   type="text"
                   className="form-control form-control-lg"
@@ -112,10 +112,9 @@ const UpdateProd = (props) => {
                   onChange={(e) => setprice(e.target.value)}
                 />
               </div>
-              <button style={{fontFamily: "arial"}} onClick={updateSingleProduct} className="btn btn-primary btn-block">Update Product</button>
+              <button style={{fontFamily: "arial"}} onClick={updateSingleProduct} className="btn btn-primary btn-block">Save changes</button>
           
-        </div>
-      </div>
+        </div></div></main>
  
     );
 };
