@@ -1,0 +1,17 @@
+node_modules/
+build/
+dist/
+__pycache__/
+*.pyc
+venv/
+.venv/
+*.sqlite3
+Backend/blockchain/media/
+.env
+.env.*
+!.env.example
+.DS_Store
+.idea/
+.vscode/
+*.log
+coverage/
